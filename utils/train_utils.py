@@ -14,8 +14,8 @@ from utils.utils_memory import Memory
 
 def get_free_gpu_idx():
     """Get the index of the GPU with current lowest memory usage."""
-    os.system("nvidia-smi -q -d Memory |grep -A4 GPU|grep Used")
-    memory_available = [int(x.split()[2]) for x in open("./utils/tmp", "r").readlines()]
+    os.system("nvidia-smi -q -d Memory |grep -A4 GPU|grep Used  > ./output/tmp")
+    memory_available = [int(x.split()[2]) for x in open("./output/tmp", "r").readlines()]
     return np.argmin(memory_available)
 
 

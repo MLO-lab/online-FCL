@@ -7,14 +7,14 @@ from utils.train_utils import get_free_gpu_idx, get_logger, initialize_clients, 
 
 
 args = config_FCL.base_parser()
+logger = get_logger(args)
+
 if torch.cuda.is_available():
     gpu_idx = get_free_gpu_idx()
     args.cuda = True
     args.device = f'cuda:{gpu_idx}'
 else:
     args.device = 'cpu' 
-
-logger = get_logger(args)
 print(args)
 
 for run in range(args.n_runs):
