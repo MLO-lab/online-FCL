@@ -66,13 +66,22 @@ for run in range(args.n_runs):
     # global model accuracy when all clients finish their training on all tasks (FedCIL ICLR2023)
     logger = test_global_model(args, global_test_loader, global_model, logger, run)
 
+final_accs = []
+final_fors = []
 for client_id in range(args.n_clients):
     print(f'Client {client_id}: {clients[client_id].task_list}')
     print(np.mean(logger['test']['acc'][client_id], 0))
-    print(f'Final client accuracy: {np.mean(np.mean(logger["test"]["acc"][client_id], 0)[args.n_tasks-1,:], 0)}')
-    print(f'Final client forgetting: {np.mean(logger["test"]["forget"][client_id])}')
+    final_acc = np.mean(np.mean(logger["test"]["acc"][client_id], 0)[args.n_tasks-1,:], 0)
+    final_for = np.mean(logger["test"]["forget"][client_id])
+    final_accs.append(final_acc)
+    final_fors.append(final_for)
+    print(f'Final client accuracy: {final_acc}')
+    print(f'Final client forgetting: {final_for}')
     print(f'Final client balanced accuracy: {np.mean(logger["test"]["bal_acc"][client_id])}')
     print()
+
+print(f'Final average accuracy: {np.mean(final_accs):0.4f} (+-) {np.std(final_accs):0.4f}')
+print(f'Final average forgetting: {np.mean(final_fors):0.4f} (+-) {np.std(final_fors):0.4f}')
 
 # save training results
 save_results(args, logger)
