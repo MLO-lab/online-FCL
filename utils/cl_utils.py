@@ -88,6 +88,9 @@ class Client:
         self.model.train()
         samples, labels = samples.to(self.args.device), labels.to(self.args.device)
         batch_loss = self.training_step(samples, labels)
+        # multiple gradient updates for the same mini-batch if local_epochs > 1
+        for local_epoch in range(self.args.local_epochs - 1):
+            batch_loss = self.training_step(self.augment(samples) , labels)
         self.train_task_loss += batch_loss
 
 
@@ -96,7 +99,6 @@ class Client:
         samples, labels = samples.to(self.args.device), labels.to(self.args.device)
         current_classes = self.get_current_task()
         batch_loss = self.training_step(samples, labels)
-        
         # multiple gradient updates for the same mini-batch if local_epochs > 1
         for local_epoch in range(self.args.local_epochs - 1):
             batch_loss = self.training_step(self.augment(samples) , labels)
