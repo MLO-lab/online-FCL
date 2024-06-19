@@ -2,8 +2,14 @@ import os, pickle
 import torch
 import medmnist
 import numpy as np
+import torch.nn.functional as F
 
+from sklearn.datasets import fetch_20newsgroups
+from sklearn.model_selection import train_test_split
+from transformers import AutoModel, AutoTokenizer
 from torchvision import datasets, transforms
+from torch import Tensor
+from tqdm import tqdm
 
 # taken from https://github.com/clovaai/rainbow-memory/blob/master/utils/data_loader.py
 def get_statistics(args):
@@ -36,6 +42,7 @@ def get_statistics(args):
         "organamnist",
         "organcmnist",
         "organsmnist",
+        "newsgroup",
 
     ]
     mean = {
@@ -56,6 +63,7 @@ def get_statistics(args):
         "organamnist": (0.4678,),
         "organcmnist": (0.4942,),
         "organsmnist": (0.4953,),
+        "newsgroup": None,
     }
 
     std = {
@@ -77,6 +85,7 @@ def get_statistics(args):
         "organamnist": (0.2975,),
         "organcmnist": (0.2834,),
         "organsmnist": (0.2826,),
+        "newsgroup": None,
     }
 
     classes = {
@@ -97,6 +106,7 @@ def get_statistics(args):
         "organamnist": 10,
         "organcmnist": 10,
         "organsmnist": 10,
+        "newsgroup": 20,
     }
 
     in_channels = {
@@ -117,6 +127,7 @@ def get_statistics(args):
         "organamnist": 1,
         "organcmnist": 1,
         "organsmnist": 1,
+        "newsgroup": None,
     }
 
     inp_size = {
@@ -137,6 +148,7 @@ def get_statistics(args):
         "organamnist": 28,
         "organcmnist": 28,
         "organsmnist": 28,
+        "newsgroup": None,
     }
 
     if dataset in ['bloodmnist', 'pathmnist', 'tissuemnist']:
@@ -146,12 +158,16 @@ def get_statistics(args):
     else:
         args.n_tasks = 5 if args.n_tasks == -1 else args.n_tasks
 
-    args.input_size = (in_channels[dataset], inp_size[dataset], inp_size[dataset])
+    if args.dataset_name == 'newsgroup':
+        args.input_size = 384
+    else:
+        args.input_size = (in_channels[dataset], inp_size[dataset], inp_size[dataset])
+
     args.n_classes = classes[dataset]
     args.n_classes_per_task = args.n_classes // args.n_tasks
 
     if args.model_name == 'default':
-        if args.dataset_name == 'mnist':
+        if args.dataset_name in ['mnist', 'newsgroup']:
             args.model_name = 'mlp'
         else:
             args.model_name = 'resnet'
@@ -162,14 +178,16 @@ def get_statistics(args):
     else:
         dir_results = f'{dir_framework}/{args.model_name}/{args.optimizer}/'
 
-
-    if args.update_strategy == 'balanced':
-        if args.balanced_update == 'random':
-            args.dir_results = f'{dir_results}/{args.memory_size}/{args.batch_size}/{args.local_epochs}/{args.sampling_strategy}/{args.update_strategy}_{args.balanced_update}/'
-        else:
-            args.dir_results = f'{dir_results}/{args.memory_size}/{args.batch_size}/{args.local_epochs}/{args.sampling_strategy}/{args.update_strategy}_{args.balanced_update}/{args.uncertainty_score}/{args.balanced_step}/'
-    if args.update_strategy == 'reservoir':
-        args.dir_results = f'{dir_results}/{args.memory_size}/{args.batch_size}/{args.local_epochs}/{args.sampling_strategy}/{args.update_strategy}/'
+    if args.with_memory:
+        if args.update_strategy == 'balanced':
+            if args.balanced_update == 'random':
+                args.dir_results = f'{dir_results}/{args.memory_size}/{args.batch_size}/{args.local_epochs}/{args.sampling_strategy}/{args.update_strategy}_{args.balanced_update}/'
+            else:
+                args.dir_results = f'{dir_results}/{args.memory_size}/{args.batch_size}/{args.local_epochs}/{args.sampling_strategy}/{args.update_strategy}_{args.balanced_update}/{args.uncertainty_score}/{args.balanced_step}/'
+        if args.update_strategy == 'reservoir':
+            args.dir_results = f'{dir_results}/{args.memory_size}/{args.batch_size}/{args.local_epochs}/{args.sampling_strategy}/{args.update_strategy}/'
+    else:
+        args.dir_results = f'{dir_results}/FedAvg/{args.batch_size}/{args.local_epochs}/'
 
     if not os.path.exists(args.dir_results):
         os.makedirs(args.dir_results)
@@ -246,6 +264,91 @@ def get_data(args):
         
     return train, test, val
 
+def get_data_nlp(args):
+    mean, std, n_classes, inp_size, in_channels = get_statistics(args)
+    train_x, train_y, test_x, test_y = get_embeddings(args)
+    return train_x, train_y, test_x, test_y
+
+
+def average_pool(last_hidden_states: Tensor,
+                 attention_mask: Tensor) -> Tensor:
+    last_hidden = last_hidden_states.masked_fill(~attention_mask[..., None].bool(), 0.0)
+    return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
+
+
+def get_embeddings(args):
+    dir_output = f'{args.dir_data}/nlp/'
+    fn_emb_tr = f'{dir_output}/embedding_train.pkl'
+    fn_emb_te = f'{dir_output}/embedding_test.pkl'
+    fn_lab_tr = f'{dir_output}/label_train.pkl'
+    fn_lab_te = f'{dir_output}/label_test.pkl'
+
+    if not os.path.exists(fn_emb_tr):
+        os.makedirs(dir_output)
+
+        newsgroups_all = fetch_20newsgroups(subset='all')
+        input_all = []
+        for news in newsgroups_all.data:
+            query = 'query: ' + news
+            input_all.append(query)
+
+        tokenizer = AutoTokenizer.from_pretrained('intfloat/e5-small-v2')
+        model = AutoModel.from_pretrained('intfloat/e5-small-v2')
+
+        input_all = []
+        for news in newsgroups_all.data:
+            query = 'query: ' + news
+            input_all.append(query)
+
+        def generate_embedding(text_list):
+            output_list = []
+            model.eval()
+            for i in tqdm(range(0, len(text_list), 10)):
+                chunk = text_list[i:i+10]
+                batch_dict = tokenizer(chunk, max_length=512, padding=True, truncation=True, return_tensors='pt')
+                with torch.no_grad():
+                    outputs = model(**batch_dict)
+                    embeddings = average_pool(outputs.last_hidden_state, batch_dict['attention_mask'])
+                output_list.append(embeddings)
+
+            output = torch.cat(output_list)
+            return output
+        
+        embeddings_all = generate_embedding(input_all)
+
+        # normalize embeddings
+        embeddings_all = F.normalize(embeddings_all, p=2, dim=1)
+
+        embeddings_tr, embeddings_te, labels_tr, labels_te = train_test_split(embeddings_all, newsgroups_all.target, test_size=0.15, random_state=12345, stratify=newsgroups_all.target)
+        train_y = torch.stack([torch.tensor(label, dtype=torch.int64) for label in labels_tr])
+        test_y = torch.stack([torch.tensor(label, dtype=torch.int64) for label in labels_te])
+
+        # Save generated embeddings
+        with open(fn_emb_tr, 'wb') as outfile:
+            pickle.dump(torch.Tensor(embeddings_tr), outfile)
+            outfile.close()
+
+        with open(fn_emb_te, 'wb') as outfile:
+            pickle.dump(torch.Tensor(embeddings_te), outfile)
+            outfile.close()
+
+        # Save generated embeddings
+        with open(fn_lab_tr, 'wb') as outfile:
+            pickle.dump(train_y, outfile)
+            outfile.close()
+
+        with open(fn_lab_te, 'wb') as outfile:
+            pickle.dump(test_y, outfile)
+            outfile.close()
+
+    else:
+        embeddings_tr = pickle.load(open(fn_emb_tr, 'rb'))
+        embeddings_te = pickle.load(open(fn_emb_te, 'rb'))
+        train_y = pickle.load(open(fn_lab_tr, 'rb'))
+        test_y = pickle.load(open(fn_lab_te, 'rb'))
+
+    return embeddings_tr, train_y, embeddings_te, test_y
+
 
 # taken from https://github.com/optimass/Maximally_Interfered_Retrieval/blob/master/data.py
 def make_valid_from_train(dataset, cut=0.95):
@@ -268,30 +371,36 @@ def make_valid_from_train(dataset, cut=0.95):
 
 
 def get_data_per_class(args):
-    train, test, val = get_data(args)
-    # iterate over train/test to apply the transformations and get images and labels
-    train_x = []
-    train_y = []
-    for img, label in train:
-        train_x.append(img)
-        if args.dataset_name in medmnist.INFO.keys():
-            train_y.append(torch.tensor(label[0], dtype=torch.int64))
-        else:
-            train_y.append(torch.tensor(label))
 
-    test_x = []
-    test_y = []
-    for img, label in test:
-        test_x.append(img)
-        if args.dataset_name in medmnist.INFO.keys():
-            test_y.append(torch.tensor(label[0], dtype=torch.int64))
-        else:
-            test_y.append(torch.tensor(label))
-    
-    train_x = torch.stack(train_x)
-    train_y = torch.stack(train_y)
-    test_x = torch.stack(test_x)
-    test_y = torch.stack(test_y)
+    if args.dataset_name == 'newsgroup':
+        train_x, train_y, test_x, test_y = get_data_nlp(args)
+        val = None
+
+    else:
+        train, test, val = get_data(args)
+        # iterate over train/test to apply the transformations and get images and labels
+        train_x = []
+        train_y = []
+        for img, label in train:
+            train_x.append(img)
+            if args.dataset_name in medmnist.INFO.keys():
+                train_y.append(torch.tensor(label[0], dtype=torch.int64))
+            else:
+                train_y.append(torch.tensor(label))
+
+        test_x = []
+        test_y = []
+        for img, label in test:
+            test_x.append(img)
+            if args.dataset_name in medmnist.INFO.keys():
+                test_y.append(torch.tensor(label[0], dtype=torch.int64))
+            else:
+                test_y.append(torch.tensor(label))
+        
+        train_x = torch.stack(train_x)
+        train_y = torch.stack(train_y)
+        test_x = torch.stack(test_x)
+        test_y = torch.stack(test_y)
 
     # sort according to the label
     out_train = [(x,y) for (x,y) in sorted(zip(train_x, train_y), key=lambda v : v[1])]
@@ -453,7 +562,10 @@ def assign_data_per_client(args, run):
     else:
         cls_assignment_list = []
         for client_id in range(args.n_clients):
-            np.random.seed((run+1) * (client_id+1))
+            if args.overlap == 'non-overlap':
+                np.random.seed((run+1) * (client_id+1))
+            else:
+                np.random.seed(run)
             cls_assignment = np.arange(args.n_classes)
             np.random.shuffle(cls_assignment)
             cls_assignment_list.append(cls_assignment)

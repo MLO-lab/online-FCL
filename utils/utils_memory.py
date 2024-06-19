@@ -13,7 +13,10 @@ class Memory:
         self.seen = 0
         self.seen_classes = set()
         self.args = args
-        self.memory_x = torch.FloatTensor(args.memory_size, *args.input_size).fill_(0.)
+        if args.dataset_name == 'newsgroup':
+            self.memory_x = torch.FloatTensor(args.memory_size, args.input_size).fill_(0.)
+        else:
+            self.memory_x = torch.FloatTensor(args.memory_size, *args.input_size).fill_(0.)
         self.memory_y = torch.LongTensor(args.memory_size).fill_(0.)
         self.memory_t = torch.Tensor(args.memory_size).fill_(0.)
 
@@ -269,38 +272,51 @@ class Memory:
 
 
 def compute_uncertainty_scores(args, mem_x, model, augmentations, tta_rep=5, seen_cls=None):
-    # evaluate prediction on the augmented images given the sequence of transform functions
-    # and store the corresponding logits
-    transform_cands = [
-        CutoutAfterToTensor(args, 1, 10),
-        CutoutAfterToTensor(args, 1, 20),
-        v2.RandomHorizontalFlip(),
-        v2.RandomVerticalFlip(),
-        v2.RandomRotation(degrees=10),
-        v2.RandomRotation(45),
-        v2.RandomRotation(90),
-        v2.ColorJitter(brightness=0.1),
-        v2.RandomPerspective(),
-        v2.RandomAffine(degrees=20, translate=(0.1, 0.3), scale=(0.5, 0.75)),
-        v2.RandomResizedCrop(args.input_size[1:], scale=(0.8, 1.0), ratio=(0.9, 1.1), antialias=True),
-        v2.RandomInvert()
-            ]
 
-    transformSize = len(transform_cands)
-    mem_x = mem_x.to(args.device)
-    # all_logits = []
-    # with torch.no_grad():
-    #     for rep in range(tta_rep):
-    #         bx_tmp = augmentations(mem_x)
-    #         logits_tmp = model(bx_tmp)
-    #         all_logits.append(logits_tmp)
+    if args.dataset_name == 'newsgroup':
+        mem_x = mem_x.to(args.device)
 
-    all_logits = []
-    with torch.no_grad():
-        for tr in transform_cands:
-            bx_tmp = tr(mem_x)
-            logits_tmp = model(bx_tmp)
-            all_logits.append(logits_tmp)
+        def add_gaussian_noise(args, embedding_matrix, mean=0, std=0.1):
+            noise = torch.Tensor(np.random.normal(mean, std, size=embedding_matrix.shape)).to(args.device)
+            noisy_embedding_matrix = embedding_matrix + noise
+            return noisy_embedding_matrix
+    
+        all_logits = []
+        with torch.no_grad():
+            for rep in range(tta_rep):
+                bx_tmp = add_gaussian_noise(args, mem_x)
+                logits_tmp = model(bx_tmp)
+                all_logits.append(logits_tmp)
+
+        transformSize = tta_rep
+
+    else:
+        # evaluate prediction on the augmented images given the sequence of transform functions
+        # and store the corresponding logits
+        transform_cands = [
+            CutoutAfterToTensor(args, 1, 10),
+            CutoutAfterToTensor(args, 1, 20),
+            v2.RandomHorizontalFlip(),
+            v2.RandomVerticalFlip(),
+            v2.RandomRotation(degrees=10),
+            v2.RandomRotation(45),
+            v2.RandomRotation(90),
+            v2.ColorJitter(brightness=0.1),
+            v2.RandomPerspective(),
+            v2.RandomAffine(degrees=20, translate=(0.1, 0.3), scale=(0.5, 0.75)),
+            v2.RandomResizedCrop(args.input_size[1:], scale=(0.8, 1.0), ratio=(0.9, 1.1), antialias=True),
+            v2.RandomInvert()
+                ]
+
+        transformSize = len(transform_cands)
+        mem_x = mem_x.to(args.device)
+
+        all_logits = []
+        with torch.no_grad():
+            for tr in transform_cands:
+                bx_tmp = tr(mem_x)
+                logits_tmp = model(bx_tmp)
+                all_logits.append(logits_tmp)
 
     # compute uncertainty scores for the current batch extract the indices of the 10 most (un)certain samples
     # we assume to sample a number of samples equal to the batch size

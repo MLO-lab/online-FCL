@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import balanced_accuracy_score, confusion_matrix, ConfusionMatrixDisplay
 from torchvision import transforms
+from copy import deepcopy
 
 plt.rcParams.update({
     "font.family": "serif",})
@@ -36,6 +37,7 @@ class Client:
         self.train_iterators = [iter(loader) for loader in self.train_loader]
         self.importance_weight = 1.0
         self.global_model = None
+        self.last_local_model = deepcopy(model)
 
 
         # define the augmentations for multiple training epochs
@@ -83,14 +85,24 @@ class Client:
         self.train_task_loss = 0
         return logger
 
+    def add_gaussian_noise(self, embedding_matrix, mean=0, std=0.1):
+        noise = torch.Tensor(np.random.normal(mean, std, size=embedding_matrix.shape)).to(self.args.device)
+        noisy_embedding_matrix = embedding_matrix + noise
+        return noisy_embedding_matrix
+
 
     def train(self, samples, labels):
         self.model.train()
         samples, labels = samples.to(self.args.device), labels.to(self.args.device)
         batch_loss = self.training_step(samples, labels)
-        # multiple gradient updates for the same mini-batch if local_epochs > 1
-        for local_epoch in range(self.args.local_epochs - 1):
-            batch_loss = self.training_step(self.augment(samples) , labels)
+        if self.args.dataset_name == 'newsgroup':
+            # multiple gradient updates for the same mini-batch if local_epochs > 1
+            for local_epoch in range(self.args.local_epochs - 1):
+                batch_loss = self.training_step(samples , labels)
+        else:
+            # multiple gradient updates for the same mini-batch if local_epochs > 1
+            for local_epoch in range(self.args.local_epochs - 1):
+                batch_loss = self.training_step(self.augment(samples) , labels)
         self.train_task_loss += batch_loss
 
 
@@ -99,9 +111,14 @@ class Client:
         samples, labels = samples.to(self.args.device), labels.to(self.args.device)
         current_classes = self.get_current_task()
         batch_loss = self.training_step(samples, labels)
-        # multiple gradient updates for the same mini-batch if local_epochs > 1
-        for local_epoch in range(self.args.local_epochs - 1):
-            batch_loss = self.training_step(self.augment(samples) , labels)
+        if self.args.dataset_name == 'newsgroup':
+            # multiple gradient updates for the same mini-batch if local_epochs > 1
+            for local_epoch in range(self.args.local_epochs - 1):
+                batch_loss = self.training_step(samples, labels)
+        else:
+            # multiple gradient updates for the same mini-batch if local_epochs > 1
+            for local_epoch in range(self.args.local_epochs - 1):
+                batch_loss = self.training_step(self.augment(samples) , labels)
         self.train_task_loss += batch_loss
 
         if self.args.update_strategy == 'reservoir':
@@ -118,7 +135,7 @@ class Client:
         current_classes = self.get_current_task()
 
         if self.args.sampling_strategy == 'uncertainty':
-            mem_x, mem_y, _ = self.memory.uncertainty_sampling(self.model, exclude_task=self.task_id,
+            mem_x, mem_y, _ = self.memory.uncertainty_sampling(self.last_local_model, exclude_task=self.task_id,
                                                                 subsample_size=self.args.subsample_size)
         if self.args.sampling_strategy == 'random':
             mem_x, mem_y, _ = self.memory.random_sampling(self.args.batch_size, exclude_task=self.task_id)
@@ -133,7 +150,7 @@ class Client:
         # multiple gradient updates for the same mini-batch if local_epochs > 1
         for local_epoch in range(self.args.local_epochs - 1):
             if self.args.sampling_strategy == 'uncertainty':
-                mem_x, mem_y, _ = self.memory.uncertainty_sampling(self.model, exclude_task=self.task_id,
+                mem_x, mem_y, _ = self.memory.uncertainty_sampling(self.last_local_model, exclude_task=self.task_id,
                                                                    subsample_size=self.args.subsample_size)
             if self.args.sampling_strategy == 'random':
                 mem_x, mem_y, _ = self.memory.random_sampling(self.args.batch_size, exclude_task=self.task_id)
@@ -141,7 +158,11 @@ class Client:
                 mem_x, mem_y, _ = self.memory.balanced_random_sampling(self.args.batch_size, exclude_task=self.task_id)
 
             mem_x, mem_y = mem_x.to(self.args.device), mem_y.to(self.args.device)
-            input_x = torch.cat([self.augment(samples), mem_x]) # .to(self.args.device)
+            if self.args.dataset_name == 'newsgroup':
+                input_x = torch.cat([samples, mem_x]) # .to(self.args.device)
+            else:
+                input_x = torch.cat([self.augment(samples), mem_x]) # .to(self.args.device)
+
             input_y = torch.cat([labels, mem_y])  # .to(self.args.device)
             batch_loss = self.training_step(input_x, input_y)
         
@@ -149,7 +170,7 @@ class Client:
         if self.args.update_strategy == 'reservoir':
             self.memory.reservoir_update(samples, labels, self.task_id)
         if self.args.update_strategy == 'balanced':
-            self.memory.class_balanced_update(samples, labels, self.task_id, self.model, current_classes)
+            self.memory.class_balanced_update(samples, labels, self.task_id, self.last_local_model, current_classes)
 
 
     @torch.no_grad()
@@ -270,6 +291,12 @@ class Client:
 
     def get_last_global_model(self):
         return self.global_model
+    
+    def save_last_local_model(self):
+        self.last_local_model = deepcopy(self.model)
+
+    def get_last_local_model(self):
+        return self.last_local_model
 
     def update_parameters(self, global_parameters):
         # self.model.load_state_dict(global_parameters)

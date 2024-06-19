@@ -63,12 +63,12 @@ def initialize_model(args):
     if args.model_name == 'resnet':
         model = SlimResNet18(nclasses=args.n_classes, input_size=args.input_size).to(args.device)
     if args.model_name == 'mlp':
-        model = MLP(args).to(args.device)
-
+        # model = MLP(in_channels=args.input_size, hidden_channels=[256,128,64,32,args.n_classes], dropout=0.4).to(args.device)
+        model = MLP(args.input_size, [512], args.n_classes).to(args.device)
     if args.optimizer == 'sgd':
         optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
     if args.optimizer == 'adam':
-        optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001) # 3e-4
 
     criterion = torch.nn.CrossEntropyLoss()
     return model, optimizer, criterion
@@ -204,5 +204,3 @@ def save_results(args, logger):
     with open(logger_fn, 'wb') as outfile:
         pickle.dump(logger, outfile)
         outfile.close()
-
-
