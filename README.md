@@ -1,4 +1,4 @@
-# Online Federated Continual Learning
+# Federated Continual Learning Goes Online
 
 The repository contains the code to reproduce the results of our paper. 
 
@@ -8,7 +8,7 @@ The repository contains the code to reproduce the results of our paper.
 - `configuration` contains the hyperparameters (dataset, memory population strategy, memory sampling strategy, memory size, etc.) to run our experiments.
 
 ### Run the experiments
-The current version of the configuration file (`configuration/config_jup.py`) enables running an experiment for five different clients on CIFAR10 over three run. All the parameters can be changed as desired in the `main_OFCL.ipynb` file.
+The current version of the configuration file (`configuration/config_jup.py`) enables running an experiment for five different clients on CIFAR10 over three runs. All the parameters can be changed as desired in the `main_OFCL.ipynb` file.
 The most important hyperparameters are the followings.
 
 For the continual learning part:
@@ -25,8 +25,3 @@ For the federated learning part:
 - `--burnin`: number of epochs before a client contributes to the communication rounds.
 - `--jump`: number of epochs to skip before a client contributes to the communication rounds.
 - `--fl_update`: FedAvg (`favg`), weighted FedAvg (`w_favg`).
-
-
-### CIFAR10-LT and CIFAR100-LT
-To create these two datasets, first run the experiments with CIFAR10 and CIFAR100. After running these experiments, it is possible to create the long-tailed (LT) version of the already preprocessed data. 
-The snippet of code to save the LT version of the datasets is provided at the end of the Jupyter notebook.
