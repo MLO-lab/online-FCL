@@ -1,15 +1,23 @@
 import os, pickle
+os.environ["KERAS_BACKEND"] = "torch"
 import torch
+import random
 import medmnist
 import numpy as np
 import torch.nn.functional as F
 
+from collections import Counter
+from datasets import load_dataset
+from datasets import Dataset
+from keras.datasets import reuters
 from sklearn.datasets import fetch_20newsgroups
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MultiLabelBinarizer
 from transformers import AutoModel, AutoTokenizer
 from torchvision import datasets, transforms
 from torch import Tensor
 from tqdm import tqdm
+
 
 # taken from https://github.com/clovaai/rainbow-memory/blob/master/utils/data_loader.py
 def get_statistics(args):
@@ -43,6 +51,9 @@ def get_statistics(args):
         "organcmnist",
         "organsmnist",
         "newsgroup",
+        "reuters",
+        "yahoo",
+        "dbpedia",
 
     ]
     mean = {
@@ -64,6 +75,9 @@ def get_statistics(args):
         "organcmnist": (0.4942,),
         "organsmnist": (0.4953,),
         "newsgroup": None,
+        "reuters": None,
+        "yahoo": None,
+        "dbpedia": None,
     }
 
     std = {
@@ -86,6 +100,9 @@ def get_statistics(args):
         "organcmnist": (0.2834,),
         "organsmnist": (0.2826,),
         "newsgroup": None,
+        "reuters": None,
+        "yahoo": None,
+        "dbpedia": None,
     }
 
     classes = {
@@ -107,6 +124,9 @@ def get_statistics(args):
         "organcmnist": 10,
         "organsmnist": 10,
         "newsgroup": 20,
+        "reuters": 46,
+        "yahoo": 10,
+        "dbpedia": 14,
     }
 
     in_channels = {
@@ -128,6 +148,9 @@ def get_statistics(args):
         "organcmnist": 1,
         "organsmnist": 1,
         "newsgroup": None,
+        "reuters": None,
+        "yahoo": None,
+        "dbpedia": None,
     }
 
     inp_size = {
@@ -149,16 +172,21 @@ def get_statistics(args):
         "organcmnist": 28,
         "organsmnist": 28,
         "newsgroup": None,
+        "reuters": None,
+        "yahoo": None,
+        "dbpedia": None,
     }
 
     if dataset in ['bloodmnist', 'pathmnist', 'tissuemnist']:
         args.n_tasks = 4 if args.n_tasks == -1 else args.n_tasks
     if dataset == 'tinyimagenet':
         args.n_tasks = 20 if args.n_tasks == -1 else args.n_tasks
+    # if dataset == 'cifar100':
+    #     args.n_tasks = 10 if args.n_tasks == -1 else args.n_tasks
     else:
         args.n_tasks = 5 if args.n_tasks == -1 else args.n_tasks
 
-    if args.dataset_name == 'newsgroup':
+    if args.dataset_name in ['newsgroup', 'reuters', 'yahoo', 'dbpedia']:
         args.input_size = 384
     else:
         args.input_size = (in_channels[dataset], inp_size[dataset], inp_size[dataset])
@@ -167,12 +195,12 @@ def get_statistics(args):
     args.n_classes_per_task = args.n_classes // args.n_tasks
 
     if args.model_name == 'default':
-        if args.dataset_name in ['mnist', 'newsgroup']:
+        if args.dataset_name in ['mnist', 'newsgroup', 'reuters', 'yahoo', 'dbpedia']:
             args.model_name = 'mlp'
         else:
             args.model_name = 'resnet'
 
-    dir_framework = f'{args.dir_output}/{args.framework}/{args.dataset_name}/{args.fl_update}/{args.overlap}/{args.burnin}/{args.jump}'
+    dir_framework = f'{args.dir_output}/{args.framework}/{args.dataset_name}/{args.fl_update}/{args.overlap}/{args.n_clients}clients/{args.burnin}/{args.jump}'
     if args.optimizer == 'sgd':
         dir_results = f'{dir_framework}/{args.model_name}/{args.optimizer}/{str(args.lr).replace(".","")}'
     else:
@@ -187,7 +215,7 @@ def get_statistics(args):
         if args.update_strategy == 'reservoir':
             args.dir_results = f'{dir_results}/{args.memory_size}/{args.batch_size}/{args.local_epochs}/{args.sampling_strategy}/{args.update_strategy}/'
     else:
-        args.dir_results = f'{dir_results}/FedAvg/{args.batch_size}/{args.local_epochs}/'
+        args.dir_results = f'{dir_results}/no_mem/{args.fl_update}/{args.batch_size}/{args.local_epochs}/'
 
     if not os.path.exists(args.dir_results):
         os.makedirs(args.dir_results)
@@ -276,78 +304,204 @@ def average_pool(last_hidden_states: Tensor,
     return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
 
 
+def reuters_decoder(data_list, reverse_word_index):
+    output = []
+    for data in data_list:
+        decoded_data = ' '.join([reverse_word_index.get(i - 3, '?') for i in data])
+        output.append(decoded_data)
+    return output
+
+
+def get_balanced_yahoo(dataset, min_count):
+    labels = dataset['topic']
+    # Create a balanced dataset
+    balanced_dataset = []
+
+    # Separate the indices by class
+    class_indices = {label: [] for label in set(labels)}
+    for idx, label in enumerate(labels):
+        class_indices[label].append(idx)
+
+    # Sample min_count instances from each class
+    for label, indices in class_indices.items():
+        sampled_indices = random.sample(indices, min_count)
+        for i in sampled_indices:
+            balanced_dataset.append(dataset[i])
+
+    # Check the new distribution
+    balanced_labels = [example['topic'] for example in balanced_dataset]
+    balanced_label_counts = Counter(balanced_labels)
+    print(f"Class distribution after balancing: {balanced_label_counts}")
+
+
+    balanced_dataset = Dataset.from_dict({
+        'question_title': [example['question_title'] for example in balanced_dataset],
+        'question_content': [example['question_content'] for example in balanced_dataset],
+        'best_answer': [example['best_answer'] for example in balanced_dataset],
+        'topic': [example['topic'] for example in balanced_dataset]})
+    return balanced_dataset
+
+
+def get_balanced_dbpedia(dataset, min_count):
+    labels = dataset['label']
+    # Create a balanced dataset
+    balanced_dataset = []
+
+    # Separate the indices by class
+    class_indices = {label: [] for label in set(labels)}
+    for idx, label in enumerate(labels):
+        class_indices[label].append(idx)
+
+    # Sample min_count instances from each class
+    for label, indices in class_indices.items():
+        sampled_indices = random.sample(indices, min_count)
+        for i in sampled_indices:
+            balanced_dataset.append(dataset[i])
+
+    # Check the new distribution
+    balanced_labels = [example['label'] for example in balanced_dataset]
+    balanced_label_counts = Counter(balanced_labels)
+    print(f"Class distribution after balancing: {balanced_label_counts}")
+
+    balanced_dataset = Dataset.from_dict({
+        'title': [example['title'] for example in balanced_dataset],
+        'content': [example['content'] for example in balanced_dataset],
+        'label': [example['label'] for example in balanced_dataset]})
+    return balanced_dataset
+    
+
+def get_combined_data_yahoo(dataset):
+    combined_dataset = []
+    for text in dataset:
+        combined_text = (text['question_title'] if text['question_title'] else '') + (' ' + text['question_content'] if text['question_content'] else '') + (' ' + text['best_answer'] if text['best_answer'] else '')
+        combined_dataset.append(combined_text)
+    return combined_dataset
+
+
+def get_combined_data_dbpedia(dataset):
+    combined_dataset = []
+    for text in dataset:
+        combined_text = (text['title'] if text['title'] else '') + (' ' + text['content'] if text['content'] else '')
+        combined_dataset.append(combined_text)
+    return combined_dataset
+
+
+def generate_embedding(text_list):
+    tokenizer = AutoTokenizer.from_pretrained('intfloat/e5-small-v2')
+    model = AutoModel.from_pretrained('intfloat/e5-small-v2')
+    
+    output_list = []
+    model.eval()
+    for i in tqdm(range(0, len(text_list), 10)):
+        chunk = text_list[i:i+10]
+        batch_dict = tokenizer(chunk, max_length=512, padding=True, truncation=True, return_tensors='pt')
+        with torch.no_grad():
+            outputs = model(**batch_dict)
+            embeddings = average_pool(outputs.last_hidden_state, batch_dict['attention_mask'])
+        output_list.append(embeddings)
+
+    output = torch.cat(output_list)
+    return output
+
+
+def create_nlp_data(args):
+    if args.dataset_name == 'newsgroup':
+        newsgroups_train = fetch_20newsgroups(subset='train')
+        newsgroups_test = fetch_20newsgroups(subset='test')
+
+        input_train = ['query: ' + news for news in newsgroups_train.data]
+        y_train = torch.stack([torch.tensor(label, dtype=torch.int64) for label in newsgroups_train.target])
+
+        input_test = ['query: ' + news for news in newsgroups_test.data]
+        y_test = torch.stack([torch.tensor(label, dtype=torch.int64) for label in newsgroups_test.target])
+
+    if args.dataset_name == 'reuters':
+        (train_data, train_labels), (test_data, test_labels) = reuters.load_data(num_words=None)
+        word_index = reuters.get_word_index()
+        reverse_word_index = dict([(value,key) for (key, value) in word_index.items()])
+
+        decoded_train = reuters_decoder(train_data, reverse_word_index)
+        decoded_test = reuters_decoder(test_data, reverse_word_index)
+
+        input_train = ['query: ' + news for news in decoded_train]
+        y_train = torch.stack([torch.tensor(label, dtype=torch.int64) for label in train_labels])
+
+        input_test = ['query: ' + news for news in decoded_test]
+        y_test = torch.stack([torch.tensor(label, dtype=torch.int64) for label in test_labels])
+
+    if args.dataset_name == 'yahoo':
+        train = load_dataset("community-datasets/yahoo_answers_topics", split='train[:20000]')
+        test = load_dataset("community-datasets/yahoo_answers_topics", split='test[:5000]')
+
+        balanced_train = get_balanced_yahoo(train, min_count=1000)
+        balanced_test = get_balanced_yahoo(test, min_count=200)
+        combined_train = get_combined_data_yahoo(balanced_train)
+        combined_test = get_combined_data_yahoo(balanced_test)
+
+        input_train = ['query: ' + text for text in combined_train]
+        input_test = ['query: ' + text for text in combined_test]
+        y_train = torch.stack([torch.tensor(text['topic'], dtype=torch.int64) for text in balanced_train])
+        y_test = torch.stack([torch.tensor(text['topic'], dtype=torch.int64) for text in balanced_test])
+
+    if args.dataset_name == 'dbpedia':
+        train = load_dataset("fancyzhx/dbpedia_14", split='train')
+        test = load_dataset("fancyzhx/dbpedia_14", split='test')
+
+        balanced_train = get_balanced_dbpedia(train, min_count=2000)
+        balanced_test = get_balanced_dbpedia(test, min_count=400)
+        combined_train = get_combined_data_dbpedia(balanced_train)
+        combined_test = get_combined_data_dbpedia(balanced_test)
+
+        input_train = ['query: ' + text for text in combined_train]
+        input_test = ['query: ' + text for text in combined_test]
+        y_train = torch.stack([torch.tensor(text['label'], dtype=torch.int64) for text in balanced_train])
+        y_test = torch.stack([torch.tensor(text['label'], dtype=torch.int64) for text in balanced_test])
+
+
+    return input_train, y_train, input_test, y_test
+
+
 def get_embeddings(args):
-    dir_output = f'{args.dir_data}/nlp/'
-    fn_emb_tr = f'{dir_output}/embedding_train.pkl'
-    fn_emb_te = f'{dir_output}/embedding_test.pkl'
-    fn_lab_tr = f'{dir_output}/label_train.pkl'
-    fn_lab_te = f'{dir_output}/label_test.pkl'
+    dir_output = f'./data/nlp/{args.dataset_name}'
+    fn_emb_tr = f'{dir_output}/embeddings_train.pkl'
+    fn_emb_te = f'{dir_output}/embeddings_test.pkl'
+    fn_lab_tr = f'{dir_output}/labels_train.pkl'
+    fn_lab_te = f'{dir_output}/labels_test.pkl'
 
     if not os.path.exists(fn_emb_tr):
         os.makedirs(dir_output)
-
-        newsgroups_all = fetch_20newsgroups(subset='all')
-        input_all = []
-        for news in newsgroups_all.data:
-            query = 'query: ' + news
-            input_all.append(query)
-
-        tokenizer = AutoTokenizer.from_pretrained('intfloat/e5-small-v2')
-        model = AutoModel.from_pretrained('intfloat/e5-small-v2')
-
-        input_all = []
-        for news in newsgroups_all.data:
-            query = 'query: ' + news
-            input_all.append(query)
-
-        def generate_embedding(text_list):
-            output_list = []
-            model.eval()
-            for i in tqdm(range(0, len(text_list), 10)):
-                chunk = text_list[i:i+10]
-                batch_dict = tokenizer(chunk, max_length=512, padding=True, truncation=True, return_tensors='pt')
-                with torch.no_grad():
-                    outputs = model(**batch_dict)
-                    embeddings = average_pool(outputs.last_hidden_state, batch_dict['attention_mask'])
-                output_list.append(embeddings)
-
-            output = torch.cat(output_list)
-            return output
-        
-        embeddings_all = generate_embedding(input_all)
+        input_train, y_train, input_test, y_test = create_nlp_data(args)
+        embeddings_tr = generate_embedding(input_train)
+        embeddings_te = generate_embedding(input_test)
 
         # normalize embeddings
-        embeddings_all = F.normalize(embeddings_all, p=2, dim=1)
-
-        embeddings_tr, embeddings_te, labels_tr, labels_te = train_test_split(embeddings_all, newsgroups_all.target, test_size=0.15, random_state=12345, stratify=newsgroups_all.target)
-        train_y = torch.stack([torch.tensor(label, dtype=torch.int64) for label in labels_tr])
-        test_y = torch.stack([torch.tensor(label, dtype=torch.int64) for label in labels_te])
-
-        # Save generated embeddings
+        embeddings_tr = F.normalize(embeddings_tr, p=2, dim=1)
+        embeddings_te = F.normalize(embeddings_te, p=2, dim=1)
+        # dimensionality check
+        print('train:', embeddings_tr.shape, y_train.shape)
+        print('test:', embeddings_te.shape, y_test.shape)
+        
+        # Save generated output
         with open(fn_emb_tr, 'wb') as outfile:
-            pickle.dump(torch.Tensor(embeddings_tr), outfile)
+            pickle.dump(embeddings_tr, outfile)
             outfile.close()
-
         with open(fn_emb_te, 'wb') as outfile:
-            pickle.dump(torch.Tensor(embeddings_te), outfile)
+            pickle.dump(embeddings_te, outfile)
             outfile.close()
-
-        # Save generated embeddings
         with open(fn_lab_tr, 'wb') as outfile:
-            pickle.dump(train_y, outfile)
+            pickle.dump(y_train, outfile)
             outfile.close()
-
         with open(fn_lab_te, 'wb') as outfile:
-            pickle.dump(test_y, outfile)
+            pickle.dump(y_test, outfile)
             outfile.close()
 
     else:
         embeddings_tr = pickle.load(open(fn_emb_tr, 'rb'))
         embeddings_te = pickle.load(open(fn_emb_te, 'rb'))
-        train_y = pickle.load(open(fn_lab_tr, 'rb'))
-        test_y = pickle.load(open(fn_lab_te, 'rb'))
+        y_train = pickle.load(open(fn_lab_tr, 'rb'))
+        y_test = pickle.load(open(fn_lab_te, 'rb'))
 
-    return embeddings_tr, train_y, embeddings_te, test_y
+    return embeddings_tr, y_train, embeddings_te, y_test
 
 
 # taken from https://github.com/optimass/Maximally_Interfered_Retrieval/blob/master/data.py
@@ -371,8 +525,7 @@ def make_valid_from_train(dataset, cut=0.95):
 
 
 def get_data_per_class(args):
-
-    if args.dataset_name == 'newsgroup':
+    if args.dataset_name in ['newsgroup', 'reuters', 'yahoo', 'dbpedia']:
         train_x, train_y, test_x, test_y = get_data_nlp(args)
         val = None
 
@@ -488,9 +641,9 @@ def split_data_with_assignment(args, cls_assignment=None):
 
 def get_loader_with_assignment(args, cls_assignment=None, run=None):
     if run == None:
-        dir_output = f'{args.dir_data}/data_splits/FCL/{args.dataset_name}/{args.overlap}/'
+        dir_output = f'{args.dir_data}/data_splits/FCL/{args.dataset_name}/{args.overlap}/{args.n_clients}clients/'
     else:
-        dir_output = f'{args.dir_data}/data_splits/FCL/{args.dataset_name}/{args.overlap}/run{run}/'
+        dir_output = f'{args.dir_data}/data_splits/{args.framework}/{args.dataset_name}/{args.overlap}/{args.n_clients}clients/run{run}/'
 
     loader_fn = f'{dir_output}/{args.dataset_name}_split.pkl'
     cls_assignment_fn = f'{dir_output}/{args.dataset_name}_cls_assignment.pkl'
@@ -556,6 +709,7 @@ def assign_data_per_client(args, run):
     if args.dataset_name in medmnist.INFO.keys():
         ds_train = ds_dict['train']
         class_lengths = torch.Tensor([len(ds_class[1]) for ds_class in ds_train])
+        print(class_lengths)
         sort, cls_assignment = class_lengths.sort(descending=True)
         cls_assignment = cls_assignment.tolist()
         cls_assignment_list = [cls_assignment for client in range(args.n_clients)]
@@ -600,7 +754,7 @@ def assign_data_per_client(args, run):
 
 
 def get_loader_all_clients(args, run):
-    dir_output = f'{args.dir_data}/data_splits/{args.framework}/{args.dataset_name}/{args.overlap}/run{run}/'
+    dir_output = f'{args.dir_data}/data_splits/{args.framework}/{args.dataset_name}/{args.overlap}/{args.n_clients}clients/run{run}/'
     loader_fn = f'{dir_output}{args.dataset_name}_split.pkl'
     cls_assignment_fn = f'{dir_output}{args.dataset_name}_cls_assignment.pkl'
     global_test_fn = f'{dir_output}{args.dataset_name}_global_test.pkl'

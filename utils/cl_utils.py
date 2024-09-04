@@ -68,10 +68,20 @@ class Client:
         return self.seen_per_task
 
 
+    def compute_proximal_term(self):
+        proximal_term = 0.0
+        for w, w_t in zip(self.model.parameters(), self.global_model.parameters()):
+            proximal_term += (w - w_t).norm(2)
+        return proximal_term
+
+
     def training_step(self, samples, labels):
         self.optimizer.zero_grad()
         logits = self.model(samples)
         loss = self.criterion(logits, labels)
+        if 'fprox' in self.args.fl_update:
+            proximal_term = self.compute_proximal_term()
+            loss += proximal_term * (self.args.mu / 2)
         loss.backward()
         self.optimizer.step()
         return loss.item()
@@ -95,7 +105,7 @@ class Client:
         self.model.train()
         samples, labels = samples.to(self.args.device), labels.to(self.args.device)
         batch_loss = self.training_step(samples, labels)
-        if self.args.dataset_name == 'newsgroup':
+        if self.args.dataset_name in ['newsgroup', 'reuters', 'yahoo', 'dbpedia']:
             # multiple gradient updates for the same mini-batch if local_epochs > 1
             for local_epoch in range(self.args.local_epochs - 1):
                 batch_loss = self.training_step(samples , labels)
@@ -111,14 +121,14 @@ class Client:
         samples, labels = samples.to(self.args.device), labels.to(self.args.device)
         current_classes = self.get_current_task()
         batch_loss = self.training_step(samples, labels)
-        if self.args.dataset_name == 'newsgroup':
+        if self.args.dataset_name in ['newsgroup', 'reuters', 'yahoo', 'dbpedia']:
             # multiple gradient updates for the same mini-batch if local_epochs > 1
             for local_epoch in range(self.args.local_epochs - 1):
                 batch_loss = self.training_step(samples, labels)
         else:
             # multiple gradient updates for the same mini-batch if local_epochs > 1
             for local_epoch in range(self.args.local_epochs - 1):
-                batch_loss = self.training_step(self.augment(samples) , labels)
+                batch_loss = self.training_step(self.augment(samples), labels)
         self.train_task_loss += batch_loss
 
         if self.args.update_strategy == 'reservoir':
@@ -135,7 +145,7 @@ class Client:
         current_classes = self.get_current_task()
 
         if self.args.sampling_strategy == 'uncertainty':
-            mem_x, mem_y, _ = self.memory.uncertainty_sampling(self.last_local_model, exclude_task=self.task_id,
+            mem_x, mem_y, _ = self.memory.uncertainty_sampling(self.model, exclude_task=self.task_id,
                                                                 subsample_size=self.args.subsample_size)
         if self.args.sampling_strategy == 'random':
             mem_x, mem_y, _ = self.memory.random_sampling(self.args.batch_size, exclude_task=self.task_id)
@@ -150,7 +160,7 @@ class Client:
         # multiple gradient updates for the same mini-batch if local_epochs > 1
         for local_epoch in range(self.args.local_epochs - 1):
             if self.args.sampling_strategy == 'uncertainty':
-                mem_x, mem_y, _ = self.memory.uncertainty_sampling(self.last_local_model, exclude_task=self.task_id,
+                mem_x, mem_y, _ = self.memory.uncertainty_sampling(self.model, exclude_task=self.task_id,
                                                                    subsample_size=self.args.subsample_size)
             if self.args.sampling_strategy == 'random':
                 mem_x, mem_y, _ = self.memory.random_sampling(self.args.batch_size, exclude_task=self.task_id)
@@ -158,7 +168,7 @@ class Client:
                 mem_x, mem_y, _ = self.memory.balanced_random_sampling(self.args.batch_size, exclude_task=self.task_id)
 
             mem_x, mem_y = mem_x.to(self.args.device), mem_y.to(self.args.device)
-            if self.args.dataset_name == 'newsgroup':
+            if self.args.dataset_name in ['newsgroup', 'reuters', 'yahoo', 'dbpedia']:
                 input_x = torch.cat([samples, mem_x]) # .to(self.args.device)
             else:
                 input_x = torch.cat([self.augment(samples), mem_x]) # .to(self.args.device)
@@ -170,7 +180,7 @@ class Client:
         if self.args.update_strategy == 'reservoir':
             self.memory.reservoir_update(samples, labels, self.task_id)
         if self.args.update_strategy == 'balanced':
-            self.memory.class_balanced_update(samples, labels, self.task_id, self.last_local_model, current_classes)
+            self.memory.class_balanced_update(samples, labels, self.task_id, self.model, current_classes)
 
 
     @torch.no_grad()

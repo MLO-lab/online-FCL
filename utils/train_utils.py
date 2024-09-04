@@ -68,7 +68,7 @@ def initialize_model(args):
     if args.optimizer == 'sgd':
         optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
     if args.optimizer == 'adam':
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001) # 3e-4
+        optimizer = torch.optim.Adam(model.parameters(), lr=3e-4) # 3e-4 (yahoo 1e-2, newsgroup 0.001, dbpedia)
 
     criterion = torch.nn.CrossEntropyLoss()
     return model, optimizer, criterion
@@ -79,7 +79,6 @@ def initialize_clients(args, loader_clients, cls_assignment_list, run):
     for client_id in range(args.n_clients):
         loader_client = loader_clients[client_id]
         cls_assignment_client = cls_assignment_list[client_id]
-
         # for reproducibility purposes
         np.random.seed(run)
         torch.manual_seed(run)
@@ -90,6 +89,12 @@ def initialize_clients(args, loader_clients, cls_assignment_list, run):
         memory_client = Memory(args)
         client = Client(args, loader_client, model, optimizer, criterion, memory_client, client_id, cls_assignment_client)
         clients.append(client)
+
+    # initialize global model
+    global_model = modelAvg(args, list_models=[client.model for client in clients])
+    for client in clients:
+        client.global_model = global_model
+
     return clients
 
 

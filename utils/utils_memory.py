@@ -13,7 +13,7 @@ class Memory:
         self.seen = 0
         self.seen_classes = set()
         self.args = args
-        if args.dataset_name == 'newsgroup':
+        if args.dataset_name in ['newsgroup', 'reuters', 'yahoo', 'dbpedia']:
             self.memory_x = torch.FloatTensor(args.memory_size, args.input_size).fill_(0.)
         else:
             self.memory_x = torch.FloatTensor(args.memory_size, *args.input_size).fill_(0.)
@@ -273,7 +273,7 @@ class Memory:
 
 def compute_uncertainty_scores(args, mem_x, model, augmentations, tta_rep=5, seen_cls=None):
 
-    if args.dataset_name == 'newsgroup':
+    if args.dataset_name in ['newsgroup', 'reuters', 'yahoo', 'dbpedia']:
         mem_x = mem_x.to(args.device)
 
         def add_gaussian_noise(args, embedding_matrix, mean=0, std=0.1):
