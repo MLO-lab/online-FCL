@@ -20,7 +20,7 @@ def base_parser():
     parser.add_argument(
         "--dir_output",
         type=str,
-        default='./output/',
+        default='./rebuttal/',
         help="Directory to save the output",
     )
 
@@ -171,9 +171,15 @@ def base_parser():
         "--fl_update",
         type=str,
         default='w_favg',
-        help="Memory sampling strategy [favg (FedAvg), w_favg (weighted FedAvg)]",
+        help="Memory sampling strategy [favg (FedAvg), w_favg (weighted FedAvg), fprox (FedProx), w_fprox (weighted fprox)]",
     )
-    
+
+    parser.add_argument(
+        "--mu",
+        type=float,
+        default=0.01,
+        help="Parameter for proximal term in FedProx",
+    )    
 
     args = parser.parse_args()
     return args
