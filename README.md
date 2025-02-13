@@ -10,7 +10,7 @@ The codebase is implemented in Python 3.12.2 and tested on Linux OS.
  - `numpy==1.26.4`
  - `scikit-learn==1.4.1`
  - `medmnist==3.0.1`
- - `matplotlib=3.8.0` 
+ - `matplotlib==3.8.0` 
 
 ### Structure of the repo
 - `utils` contains all the utilities to preprocess and save the data, to run the experiments, and to save the results.
