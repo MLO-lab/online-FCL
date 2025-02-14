@@ -1,6 +1,6 @@
 # Federated Continual Learning Goes Online (Online-FCL)
 
-The repository contains the code to reproduce the results of the paper ["Federated Continual Learning Goes Online: Uncertainty-Aware Memory Management for Vision Tasks and Beyond"](https://openreview.net/forum?id=f65RuQgVlp&referrer=%5BAuthor%20Console%5D(%2Fgroup%3Fid%3DICLR.cc%2F2025%2FConference%2FAuthors%23your-submissions)). 
+The repository contains the code to reproduce the results of the paper ["Federated Continual Learning Goes Online: Uncertainty-Aware Memory Management for Vision Tasks and Beyond"](https://openreview.net/forum?id=f65RuQgVlp)). 
 
 ### Requirements
 The codebase is implemented in Python 3.12.2 and tested on Linux OS.
