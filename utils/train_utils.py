@@ -1,13 +1,12 @@
 import os, pickle
 import torch
 import numpy as np
-
 from collections import defaultdict
 from models.resnet import SlimResNet18
 from models.mlp import MLP
 from sklearn.metrics import balanced_accuracy_score
 from torchvision import transforms
-from torchvision.models import resnet18, resnet50 # the self-implemented resnet is too slow
+from torchvision.models import resnet18, resnet50
 from utils.data_loader import get_statistics
 from utils.cl_utils import Client
 from utils.utils_memory import Memory
@@ -68,7 +67,7 @@ def initialize_model(args):
     if args.optimizer == 'sgd':
         optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
     if args.optimizer == 'adam':
-        optimizer = torch.optim.Adam(model.parameters(), lr=3e-4) # 3e-4 (yahoo 1e-2, newsgroup 0.001, dbpedia)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.004) # 3e-4 (yahoo 1e-2, newsgroup 0.004, dbpedia)
 
     criterion = torch.nn.CrossEntropyLoss()
     return model, optimizer, criterion
@@ -209,3 +208,13 @@ def save_results(args, logger):
     with open(logger_fn, 'wb') as outfile:
         pickle.dump(logger, outfile)
         outfile.close()
+
+def compute_avg_acc_for(args, logger):
+    final_accs = []
+    final_fors = []
+    for client_id in range(args.n_clients):
+        final_acc = np.mean(np.mean(logger["test"]["acc"][client_id], 0)[args.n_tasks-1,:], 0)
+        final_for = np.mean(logger["test"]["forget"][client_id])
+        final_accs.append(final_acc)
+        final_fors.append(final_for)
+    return np.mean(final_accs), np.std(final_accs), np.mean(final_fors), np.std(final_fors)
