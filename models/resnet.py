@@ -1,6 +1,7 @@
 # taken from https://github.com/AlbinSou/ocl_survey/blob/main/src/toolkit/slim_resnet18.py
 """This is the slimmed ResNet as used by Lopez et al. in the GEM paper."""
 
+import torch
 import torch.nn as nn
 from torch.nn.functional import relu, avg_pool2d
 
@@ -102,6 +103,52 @@ class ResNet(nn.Module):
         out = out.view(out.size(0), -1)
         out = self.linear(out)
         return out
+
+# class ResNet(nn.Module):
+#     def __init__(self, block, num_blocks, num_classes, nf, input_size):
+#         super(ResNet, self).__init__()
+#         self.in_planes = nf
+#         self.input_size = input_size
+
+#         self.conv1 = conv3x3(input_size[0], nf * 1)
+#         self.bn1 = nn.BatchNorm2d(nf * 1)
+#         self.layer1 = self._make_layer(block, nf * 1, num_blocks[0], stride=1)
+#         self.layer2 = self._make_layer(block, nf * 2, num_blocks[1], stride=2)
+#         self.layer3 = self._make_layer(block, nf * 4, num_blocks[2], stride=2)
+#         self.layer4 = self._make_layer(block, nf * 8, num_blocks[3], stride=2)
+
+#         # Calculate feature size using a dummy input
+#         with torch.no_grad():
+#             dummy_input = torch.zeros(1, *input_size)  # Batch size 1, input size (C, H, W)
+#             out = self._forward_conv(dummy_input)
+#             fs = out.numel()
+
+#         # Initialize the linear layer
+#         self.linear = nn.Linear(fs, num_classes)
+#         self.num_classes = num_classes
+
+#     def _make_layer(self, block, planes, num_blocks, stride):
+#         strides = [stride] + [1] * (num_blocks - 1)
+#         layers = []
+#         for stride in strides:
+#             layers.append(block(self.in_planes, planes, stride))
+#             self.in_planes = planes * block.expansion
+#         return nn.Sequential(*layers)
+    
+#     def _forward_conv(self, x):
+#         """Forward pass through convolutional layers only."""
+#         out = relu(self.bn1(self.conv1(x)))
+#         out = self.layer1(out)
+#         out = self.layer2(out)
+#         out = self.layer3(out)
+#         out = self.layer4(out)
+#         out = avg_pool2d(out, out.size(2))  # Global average pooling
+#         return out.view(out.size(0), -1)  # Flatten output
+
+#     def forward(self, x):
+#         out = self._forward_conv(x)
+#         out = self.linear(out)
+#         return out
 
 
 def SlimResNet18(nclasses, input_size=(3, 32, 32), nf=20):
