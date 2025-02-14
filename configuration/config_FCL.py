@@ -20,7 +20,7 @@ def base_parser():
     parser.add_argument(
         "--dir_output",
         type=str,
-        default='./rebuttal/',
+        default='./output/',
         help="Directory to save the output",
     )
 
