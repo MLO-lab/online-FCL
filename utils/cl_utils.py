@@ -100,7 +100,6 @@ class Client:
         noisy_embedding_matrix = embedding_matrix + noise
         return noisy_embedding_matrix
 
-
     def train(self, samples, labels):
         self.model.train()
         samples, labels = samples.to(self.args.device), labels.to(self.args.device)
@@ -177,10 +176,6 @@ class Client:
             batch_loss = self.training_step(input_x, input_y)
         
         self.train_task_loss += batch_loss
-        if self.args.update_strategy == 'reservoir':
-            self.memory.reservoir_update(samples, labels, self.task_id)
-        if self.args.update_strategy == 'balanced':
-            self.memory.class_balanced_update(samples, labels, self.task_id, self.model, current_classes)
 
 
     @torch.no_grad()

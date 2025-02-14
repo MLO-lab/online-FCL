@@ -1,10 +1,9 @@
 import torch
 import numpy as np
-
 from collections import Counter
 from torchvision import transforms
 from torchvision.transforms import v2
-from utils.data_loader import get_statistics
+from utils.data_loader import get_mean
 
 # modified from https://github.com/optimass/Maximally_Interfered_Retrieval/blob/master/buffer.py
 class Memory:
@@ -404,7 +403,7 @@ class CutoutAfterToTensor(object):
         self.fill_color = fill_color
         self.args = args
         # for this case:
-        mean, std, n_classes, inp_size, in_channels = get_statistics(self.args)
+        mean = get_mean(self.args)
         self.fill_color = torch.Tensor(mean).to(device=self.args.device)
 
 
@@ -424,23 +423,3 @@ class CutoutAfterToTensor(object):
         mask = mask.expand_as(img)
         img = img * mask + (1 - mask) * self.fill_color[:, None, None]
         return img
-
-
-class Solarize:
-    def __init__(self, args, v):
-        assert 0 <= v <= 1
-        self.v = v
-        self.args = args
-
-    def __call__(self, pil_img):
-        mean, std, n_classes, inp_size, in_channels = get_statistics(self.args)
-        invTrans = transforms.Compose([ transforms.Normalize(mean = np.dot(0, mean),
-                                                            std = np.divide(1, std)),
-                                        transforms.Normalize(mean = np.dot(-1, mean),
-                                                            std = np.divide(std, std)),
-                                    ])
-        trans = transforms.Normalize(mean, std)
-        pil_img = invTrans(pil_img)
-        mask = pil_img > self.v
-        pil_img[mask] = 1 - pil_img[mask]
-        return trans(pil_img)

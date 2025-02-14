@@ -11,12 +11,39 @@ from datasets import load_dataset
 from datasets import Dataset
 from keras.datasets import reuters
 from sklearn.datasets import fetch_20newsgroups
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MultiLabelBinarizer
 from transformers import AutoModel, AutoTokenizer
 from torchvision import datasets, transforms
 from torch import Tensor
 from tqdm import tqdm
+from PIL import Image
+
+
+def get_mean(args):
+    mean = {
+        "mnist": (0.1307,),
+        "KMNIST": (0.1307,),
+        "EMNIST": (0.1307,),
+        "FashionMNIST": (0.1307,),
+        "SVHN": (0.4377, 0.4438, 0.4728),
+        "cifar10": (0.4914, 0.4822, 0.4465),
+        "cifar100": (0.5071, 0.4867, 0.4408),
+        "CINIC10": (0.47889522, 0.47227842, 0.43047404),
+        "tinyimagenet": (0.4802, 0.4481, 0.3975), # (0.4914, 0.4822, 0.4465) https://github.com/AlbinSou/ocl_survey/blob/main/src/factories/benchmark_factory.py
+        "imagenet100": (0.485, 0.456, 0.406),
+        "imagenet1000": (0.485, 0.456, 0.406),
+        "bloodmnist": (0.7943, 0.6597, 0.6962),
+        "tissuemnist": (0.1020,),
+        "pathmnist": (0.7405, 0.5330, 0.7058),
+        "organamnist": (0.4678,),
+        "organcmnist": (0.4942,),
+        "organsmnist": (0.4953,),
+        "newsgroup": None,
+        "reuters": None,
+        "yahoo": None,
+        "dbpedia": None,
+    }
+
+    return mean[args.dataset_name]
 
 
 # taken from https://github.com/clovaai/rainbow-memory/blob/master/utils/data_loader.py
@@ -180,9 +207,9 @@ def get_statistics(args):
     if dataset in ['bloodmnist', 'pathmnist', 'tissuemnist']:
         args.n_tasks = 4 if args.n_tasks == -1 else args.n_tasks
     if dataset == 'tinyimagenet':
-        args.n_tasks = 20 if args.n_tasks == -1 else args.n_tasks
-    # if dataset == 'cifar100':
-    #     args.n_tasks = 10 if args.n_tasks == -1 else args.n_tasks
+        args.n_tasks = 10 if args.n_tasks == -1 else args.n_tasks
+    if dataset == 'cifar100':
+        args.n_tasks = 5 if args.n_tasks == -1 else args.n_tasks
     else:
         args.n_tasks = 5 if args.n_tasks == -1 else args.n_tasks
 
@@ -197,10 +224,11 @@ def get_statistics(args):
     if args.model_name == 'default':
         if args.dataset_name in ['mnist', 'newsgroup', 'reuters', 'yahoo', 'dbpedia']:
             args.model_name = 'mlp'
+            args.optimizer = 'adam'
         else:
             args.model_name = 'resnet'
 
-    dir_framework = f'{args.dir_output}/{args.framework}/{args.dataset_name}/{args.fl_update}/{args.overlap}/{args.n_clients}clients/{args.burnin}/{args.jump}'
+    dir_framework = f'{args.dir_output}/{args.framework}/{args.dataset_name}/{args.fl_update}/{args.overlap}/{args.n_clients}clients/{args.n_tasks}tasks/{args.burnin}/{args.jump}'
     if args.optimizer == 'sgd':
         dir_results = f'{dir_framework}/{args.model_name}/{args.optimizer}/{str(args.lr).replace(".","")}'
     else:
@@ -232,11 +260,12 @@ def get_statistics(args):
 def get_data(args):
     mean, std, n_classes, inp_size, in_channels = get_statistics(args)
 
-    data_transforms = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize(mean, std),
-        ])
+    transforms_list = [transforms.ToTensor(),
+                       transforms.Normalize(mean, std),]
+    if args.dataset_name in ['bloodmnist', 'pathmnist', 'tissuemnist']:
+        if in_channels == 1:
+            transforms_list.append(transforms.Lambda(lambda x: x.repeat(3, 1, 1)))
+    data_transforms = transforms.Compose(transforms_list)   
 
     dir_data = f'{args.dir_data}/raw/'
     if args.dataset_name == 'mnist':
@@ -285,12 +314,11 @@ def get_data(args):
         val = medmnist.OrganSMNIST(split='val', download=True, transform=data_transforms, root=dir_data)
 
     if args.dataset_name == 'tinyimagenet':
-        dataset = datasets.ImageFolder(f'{args.dir_data}raw/tiny-imagenet-200/train', transform=data_transforms)
-        test = datasets.ImageFolder(f'{args.dir_data}raw/tiny-imagenet-200/val', transform=data_transforms)
-        train, val = torch.utils.data.random_split(dataset, [80000, 20000])
-        test, val = torch.utils.data.random_split(val, [10000, 10000])
-        
+        train = datasets.ImageFolder(f'{args.dir_data}raw/tiny-imagenet-200/train', transform=data_transforms)
+        test = datasets.ImageFolder(f'{args.dir_data}raw/tiny-imagenet-200/test', transform=data_transforms)
+        val = datasets.ImageFolder(f'{args.dir_data}raw/tiny-imagenet-200/val', transform=data_transforms)     
     return train, test, val
+
 
 def get_data_nlp(args):
     mean, std, n_classes, inp_size, in_channels = get_statistics(args)
@@ -641,9 +669,9 @@ def split_data_with_assignment(args, cls_assignment=None):
 
 def get_loader_with_assignment(args, cls_assignment=None, run=None):
     if run == None:
-        dir_output = f'{args.dir_data}/data_splits/FCL/{args.dataset_name}/{args.overlap}/{args.n_clients}clients/'
+        dir_output = f'{args.dir_data}/data_splits/FCL/{args.dataset_name}/{args.overlap}/{args.n_clients}clients/{args.n_tasks}tasks/'
     else:
-        dir_output = f'{args.dir_data}/data_splits/{args.framework}/{args.dataset_name}/{args.overlap}/{args.n_clients}clients/run{run}/'
+        dir_output = f'{args.dir_data}/data_splits/{args.framework}/{args.dataset_name}/{args.overlap}/{args.n_clients}clients/{args.n_tasks}tasks/run{run}/'
 
     loader_fn = f'{dir_output}/{args.dataset_name}_split.pkl'
     cls_assignment_fn = f'{dir_output}/{args.dataset_name}_cls_assignment.pkl'
@@ -754,7 +782,7 @@ def assign_data_per_client(args, run):
 
 
 def get_loader_all_clients(args, run):
-    dir_output = f'{args.dir_data}/data_splits/{args.framework}/{args.dataset_name}/{args.overlap}/{args.n_clients}clients/run{run}/'
+    dir_output = f'{args.dir_data}/data_splits/{args.framework}/{args.dataset_name}/{args.overlap}/{args.n_clients}clients/{args.n_tasks}tasks/run{run}/'
     loader_fn = f'{dir_output}{args.dataset_name}_split.pkl'
     cls_assignment_fn = f'{dir_output}{args.dataset_name}_cls_assignment.pkl'
     global_test_fn = f'{dir_output}{args.dataset_name}_global_test.pkl'
