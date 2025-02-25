@@ -62,7 +62,7 @@ def base_parser():
     parser.add_argument(
         "--local_epochs",
         type=int,
-        default=1,
+        default=3,
         help="Number of epochs at batch-level (multiple gradient updates per batch)",
     )
 
@@ -90,7 +90,7 @@ def base_parser():
     parser.add_argument(
         "--memory_size",
         type=int,
-        default=500,
+        default=200,
         help="Size of episodic memory [200, 500, 1000]",
     )
 
@@ -112,7 +112,7 @@ def base_parser():
     parser.add_argument(
         "--balanced_update",
         type=str,
-        default='random',
+        default='uncertainty',
         help="Update strategy for class-balanced memory management [random, uncertainty]",
     )
 
@@ -149,7 +149,7 @@ def base_parser():
     parser.add_argument(
         "--overlap",
         type=str,
-        default='non-overlap',
+        default='overlap',
         help="Overlapping tasks across clients (overlap, non-overlap)",
     )
 
@@ -171,9 +171,15 @@ def base_parser():
         "--fl_update",
         type=str,
         default='w_favg',
-        help="Memory sampling strategy [favg (FedAvg), w_favg (weighted FedAvg)]",
+        help="Memory sampling strategy [favg (FedAvg), w_favg (weighted FedAvg), fprox (FedProx), w_fprox (weighted fprox)]",
     )
     
+    parser.add_argument(
+        "--mu",
+        type=float,
+        default=0.01,
+        help="Parameter for proximal term in FedProx",
+    )    
 
     args = parser.parse_args('')
     return args

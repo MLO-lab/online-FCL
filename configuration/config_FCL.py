@@ -62,7 +62,7 @@ def base_parser():
     parser.add_argument(
         "--local_epochs",
         type=int,
-        default=1,
+        default=3,
         help="Number of epochs at batch-level (multiple gradient updates per batch)",
     )
 
@@ -112,7 +112,7 @@ def base_parser():
     parser.add_argument(
         "--balanced_update",
         type=str,
-        default='random',
+        default='uncertainty',
         help="Update strategy for class-balanced memory management [random, uncertainty]",
     )
 
@@ -149,7 +149,7 @@ def base_parser():
     parser.add_argument(
         "--overlap",
         type=str,
-        default='non-overlap',
+        default='overlap',
         help="Overlapping tasks across clients (overlap, non-overlap)",
     )
 
