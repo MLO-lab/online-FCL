@@ -133,7 +133,7 @@ class Client:
         if self.args.update_strategy == 'reservoir':
             self.memory.reservoir_update(samples, labels, self.task_id)
         if self.args.update_strategy == 'balanced':
-            self.memory.class_balanced_update(samples, labels, self.task_id, self.model, current_classes)
+            self.memory.class_balanced_update(samples, labels, self.task_id, self.last_local_model, current_classes)
         if self.args.update_strategy == 'uncertainty':
             self.memory.uncertainty_update(samples, labels, self.task_id, self.model)
 
@@ -144,7 +144,7 @@ class Client:
         current_classes = self.get_current_task()
 
         if self.args.sampling_strategy == 'uncertainty':
-            mem_x, mem_y, _ = self.memory.uncertainty_sampling(self.model, exclude_task=self.task_id,
+            mem_x, mem_y, _ = self.memory.uncertainty_sampling(self.last_local_model, exclude_task=self.task_id,
                                                                 subsample_size=self.args.subsample_size)
         if self.args.sampling_strategy == 'random':
             mem_x, mem_y, _ = self.memory.random_sampling(self.args.batch_size, exclude_task=self.task_id)
@@ -159,7 +159,7 @@ class Client:
         # multiple gradient updates for the same mini-batch if local_epochs > 1
         for local_epoch in range(self.args.local_epochs - 1):
             if self.args.sampling_strategy == 'uncertainty':
-                mem_x, mem_y, _ = self.memory.uncertainty_sampling(self.model, exclude_task=self.task_id,
+                mem_x, mem_y, _ = self.memory.uncertainty_sampling(self.last_local_model, exclude_task=self.task_id,
                                                                    subsample_size=self.args.subsample_size)
             if self.args.sampling_strategy == 'random':
                 mem_x, mem_y, _ = self.memory.random_sampling(self.args.batch_size, exclude_task=self.task_id)
@@ -176,6 +176,10 @@ class Client:
             batch_loss = self.training_step(input_x, input_y)
         
         self.train_task_loss += batch_loss
+        if self.args.update_strategy == 'reservoir':
+            self.memory.reservoir_update(samples, labels, self.task_id)
+        if self.args.update_strategy == 'balanced':
+            self.memory.class_balanced_update(samples, labels, self.task_id, self.last_local_model, current_classes)
 
 
     @torch.no_grad()

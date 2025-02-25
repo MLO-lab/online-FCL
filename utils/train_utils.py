@@ -5,7 +5,6 @@ from collections import defaultdict
 from models.resnet import SlimResNet18
 from models.mlp import MLP
 from sklearn.metrics import balanced_accuracy_score
-from torchvision import transforms
 from torchvision.models import resnet18, resnet50
 from utils.data_loader import get_statistics
 from utils.cl_utils import Client
@@ -67,7 +66,7 @@ def initialize_model(args):
     if args.optimizer == 'sgd':
         optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
     if args.optimizer == 'adam':
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.004) # 3e-4 (yahoo 1e-2, newsgroup 0.004, dbpedia)
+        optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
 
     criterion = torch.nn.CrossEntropyLoss()
     return model, optimizer, criterion
@@ -83,7 +82,7 @@ def initialize_clients(args, loader_clients, cls_assignment_list, run):
         torch.manual_seed(run)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-            
+
         model, optimizer, criterion = initialize_model(args)
         memory_client = Memory(args)
         client = Client(args, loader_client, model, optimizer, criterion, memory_client, client_id, cls_assignment_client)
@@ -99,7 +98,6 @@ def initialize_clients(args, loader_clients, cls_assignment_list, run):
 
 def FedAvg(args, selected_clients, clients):
     global_model, _, _ = initialize_model(args)
-
     global_params = list(global_model.parameters())
     client_weights = [clients[client_id].get_weight() for client_id in selected_clients]
     total_weights = sum(client_weights)
@@ -161,7 +159,6 @@ def weightedFedAvg(args, selected_clients, clients):
 
 def modelAvg(args, list_models):
     global_model, _, _ = initialize_model(args)
-
     global_params = list(global_model.parameters())
     single_params = [list(single_model.parameters()) for single_model in list_models]
     stacked_params = [torch.stack(param_list) for param_list in zip(*single_params)]
@@ -182,7 +179,6 @@ def test_global_model(args, test_loader, model, logger, run, mode='global_test')
         total_correct, total = 0.0, 0.0
         if task_id_eval > task_id:
             break
-
         for samples, labels in eval_loader:
             samples, labels = samples.to(args.device), labels.to(args.device)
             logits = model(samples)
@@ -191,7 +187,6 @@ def test_global_model(args, test_loader, model, logger, run, mode='global_test')
             total += len(labels)
             y_true.append(labels)
             y_pred.append(preds)
-
         accuracy = total_correct/total
         logger[mode]['acc'][run][task_id][task_id_eval] = accuracy
 
@@ -199,15 +194,13 @@ def test_global_model(args, test_loader, model, logger, run, mode='global_test')
     y_pred = torch.cat(y_pred).cpu()
     balanced_accuracy = balanced_accuracy_score(y_true, y_pred)    
     logger[mode]['bal_acc'][run] = balanced_accuracy
-
     return logger
-
 
 def save_results(args, logger):
     logger_fn = f'{args.dir_results}/logger.pkl'
     with open(logger_fn, 'wb') as outfile:
         pickle.dump(logger, outfile)
-        outfile.close()
+        outfile.close()  
 
 def compute_avg_acc_for(args, logger):
     final_accs = []

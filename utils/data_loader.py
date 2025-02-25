@@ -15,7 +15,6 @@ from transformers import AutoModel, AutoTokenizer
 from torchvision import datasets, transforms
 from torch import Tensor
 from tqdm import tqdm
-from PIL import Image
 
 
 def get_mean(args):
