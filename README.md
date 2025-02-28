@@ -1,6 +1,6 @@
 # Federated Continual Learning Goes Online (Online-FCL)
 
-The repository contains the code to reproduce the results of the paper ["Federated Continual Learning Goes Online: Uncertainty-Aware Memory Management for Vision Tasks and Beyond"](https://openreview.net/forum?id=f65RuQgVlp)). 
+The repository contains the code to reproduce the results of the paper ["Federated Continual Learning Goes Online: Uncertainty-Aware Memory Management for Vision Tasks and Beyond"](https://openreview.net/forum?id=f65RuQgVlp). 
 
 ### Requirements
 The codebase is implemented in Python 3.12.2 and tested on Linux OS.
@@ -31,7 +31,7 @@ For the continual learning and memory management part:
 - `--balanced_step`: if `uncertainty` is used, we can decide the sorting strategy, i.e., `bottomk` (bottom-k), `step` (step-sized), and `topk` (top-k).
 
 For the federated learning part:
-- `--overlap`: to set if the clients works on overlapping tasks (`overlap`) or not (`non-overlap` (default)).
+- `--overlap`: to set if the clients works on overlapping tasks (`overlap` (default)) or not (`non-overlap`).
 - `--burnin`: number of epochs before a client contributes to the communication rounds.
 - `--jump`: number of epochs to skip before a client contributes to the communication rounds.
 - `--fl_update`: FedAvg (`favg`), weighted FedAvg (`w_favg`).
