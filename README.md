@@ -35,3 +35,15 @@ For the federated learning part:
 - `--burnin`: number of epochs before a client contributes to the communication rounds.
 - `--jump`: number of epochs to skip before a client contributes to the communication rounds.
 - `--fl_update`: FedAvg (`favg`), weighted FedAvg (`w_favg`).
+
+### Citation
+```
+@inproceedings{
+serra2025federated,
+title={Federated Continual Learning Goes Online: Uncertainty-Aware Memory Management for Vision Tasks and Beyond},
+author={Giuseppe Serra and Florian Buettner},
+booktitle={The Thirteenth International Conference on Learning Representations},
+year={2025},
+url={https://openreview.net/forum?id=f65RuQgVlp}
+}
+```
