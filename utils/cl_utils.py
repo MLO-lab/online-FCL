@@ -133,7 +133,7 @@ class Client:
         if self.args.update_strategy == 'reservoir':
             self.memory.reservoir_update(samples, labels, self.task_id)
         if self.args.update_strategy == 'balanced':
-            self.memory.class_balanced_update(samples, labels, self.task_id, self.last_local_model, current_classes)
+            self.memory.class_balanced_update(samples, labels, self.task_id, self.model, current_classes)
         if self.args.update_strategy == 'uncertainty':
             self.memory.uncertainty_update(samples, labels, self.task_id, self.model)
 
